@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presenter Studio Demo</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap">
+    <style>
+        /* === THEME VARIABLES (Midnight Studio) === */
+        :root {
+            --bg-primary: #0f0f13;
+            --bg-secondary: #1a1a22;
+            --text-primary: #f0f0f2;
+            --text-secondary: #8a8a9a;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.25);
+            --slide-bg: #0f0f13;
+            --stage-bg: #000;
+
+            --font-display: 'Outfit', sans-serif;
+            --font-body: 'Inter', sans-serif;
+            --title-size: 96px;
+            --subtitle-size: 36px;
+            --body-size: 28px;
+
+            --slide-padding: 72px;
+            --content-gap: 32px;
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --duration-normal: 0.6s;
+        }
+
+        /* === RESET === */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        /* === VIEWPORT BASE (fixed 16:9 stage) === */
+        html, body {
+            width: 100%; height: 100%; margin: 0;
+            overflow: hidden;
+            background: var(--stage-bg, #000);
+        }
+
+        .deck-viewport {
+            position: fixed; inset: 0;
+            overflow: hidden;
+            background: var(--stage-bg, #000);
+        }
+
+        .deck-stage {
+            position: absolute; left: 0; top: 0;
+            width: 1920px; height: 1080px;
+            overflow: hidden;
+            transform-origin: 0 0;
+            background: var(--slide-bg, #fff);
+        }
+
+        .slide {
+            position: absolute; inset: 0;
+            width: 1920px; height: 1080px;
+            overflow: hidden;
+            display: block;
+            visibility: hidden; opacity: 0;
+            pointer-events: none;
+            background: var(--slide-bg, #fff);
+            transition: opacity 0.5s var(--ease-out-expo);
+        }
+
+        .slide.active, .slide.visible {
+            visibility: visible; opacity: 1;
+            pointer-events: auto; z-index: 1;
+        }
+
+        img, video, canvas, svg {
+            max-width: 100%; max-height: 100%;
+        }
+
+        /* === SLIDE CONTENT STYLES === */
+        .slide h1 {
+            font-family: var(--font-display);
+            font-size: var(--title-size);
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1.1;
+            letter-spacing: -2px;
+        }
+
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 64px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            letter-spacing: -1px;
+        }
+
+        .slide p {
+            font-family: var(--font-body);
+            font-size: var(--body-size);
+            color: var(--text-secondary);
+            line-height: 1.6;
+            max-width: 900px;
+        }
+
+        .slide .accent-text { color: var(--accent); }
+
+        .slide .tag {
+            display: inline-block;
+            font-family: var(--font-body);
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: var(--accent);
+            margin-bottom: 24px;
+        }
+
+        /* === DECORATIVE ELEMENTS === */
+        .glow-orb {
+            position: absolute;
+            border-radius: 50%;
+            background: var(--accent);
+            opacity: 0.08;
+            filter: blur(80px);
+            pointer-events: none;
+        }
+
+        .accent-line {
+            width: 80px; height: 4px;
+            background: var(--accent);
+            border-radius: 2px;
+            margin: 24px 0;
+        }
+
+        /* === ANIMATIONS === */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity var(--duration-normal) var(--ease-out-expo),
+                        transform var(--duration-normal) var(--ease-out-expo);
+        }
+
+        .slide.visible .reveal {
+            opacity: 1; transform: translateY(0);
+        }
+
+        .reveal:nth-child(1) { transition-delay: 0.1s; }
+        .reveal:nth-child(2) { transition-delay: 0.2s; }
+        .reveal:nth-child(3) { transition-delay: 0.3s; }
+        .reveal:nth-child(4) { transition-delay: 0.4s; }
+        .reveal:nth-child(5) { transition-delay: 0.5s; }
+
+        /* === EDITABLE TEXT BLOCKS === */
+        .text-block {
+            position: absolute;
+            min-width: 200px; min-height: 40px;
+            padding: 12px 16px;
+            border: 2px solid transparent;
+            border-radius: 6px;
+            cursor: move;
+            user-select: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .text-block:hover {
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        .text-block.editing {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+            cursor: text;
+            user-select: text;
+        }
+
+        .text-block.dragging {
+            opacity: 0.8; z-index: 100;
+        }
+
+        /* === RECORDING TOOLBAR (top center) === */
+        .rec-toolbar {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(15, 15, 19, 0.92);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 28px;
+            font-family: var(--font-body);
+            font-size: 13px;
+            color: #fff;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .rec-toolbar .rec-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s, background 0.2s, opacity 0.2s;
+            font-family: var(--font-body);
+        }
+
+        .rec-toolbar .rec-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+
+        .rec-toolbar .rec-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .rec-btn--start {
+            background: #ff4444;
+            color: #fff;
+        }
+
+        .rec-btn--pause {
+            background: #f59e0b;
+            color: #1a1a22;
+        }
+
+        .rec-btn--resume {
+            background: #10b981;
+            color: #fff;
+        }
+
+        .rec-btn--stop {
+            background: #374151;
+            color: #fff;
+        }
+
+        .rec-toolbar .rec-timer {
+            min-width: 52px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            color: rgba(255,255,255,0.7);
+            font-size: 13px;
+            padding: 0 8px;
+        }
+
+        .rec-toolbar .rec-dot {
+            width: 8px; height: 8px;
+            background: #ff4444;
+            border-radius: 50%;
+            animation: pulse 1.2s infinite;
+            display: none;
+        }
+
+        .rec-toolbar .rec-dot.active { display: block; }
+        .rec-toolbar .rec-dot.paused { animation: none; opacity: 0.5; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* When recording, completely hide UI overlays from tab capture */
+        body.is-recording .rec-toolbar {
+            display: none !important;
+        }
+        body.is-recording .slide-counter,
+        body.is-recording .nav-hint,
+        body.is-recording .progress-bar {
+            display: none !important;
+        }
+
+        /* Floating mini indicator — shows recording state without polluting capture.
+           Uses a tiny dot at top-right outside main content area, 
+           but since we hide it too during recording, we use keyboard shortcuts instead. */
+        /* Floating hint: hidden during recording (so it's not captured) */
+        .rec-floating-hint {
+            display: none;
+        }
+
+        /* === SLIDE COUNTER === */
+        .slide-counter {
+            position: fixed;
+            bottom: 20px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            font-family: var(--font-body);
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+            background: rgba(0,0,0,0.6);
+            padding: 6px 14px;
+            border-radius: 16px;
+            backdrop-filter: blur(8px);
+        }
+
+        /* === NAV HINT === */
+        .nav-hint {
+            position: fixed;
+            bottom: 20px; right: 20px;
+            z-index: 9998;
+            font-family: var(--font-body);
+            font-size: 12px;
+            color: rgba(255,255,255,0.3);
+            transition: opacity 0.3s;
+        }
+
+        /* === PROGRESS BAR === */
+        .progress-bar {
+            position: fixed;
+            top: 0; left: 0;
+            height: 3px;
+            background: var(--accent);
+            z-index: 9998;
+            transition: width 0.3s var(--ease-out-expo);
+        }
+
+        /* === FEATURE GRID === */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 32px;
+            margin-top: 40px;
+        }
+
+        .feature-card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 40px;
+            border: 1px solid rgba(99, 102, 241, 0.15);
+        }
+
+        .feature-card h3 {
+            font-family: var(--font-display);
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            font-family: var(--font-body);
+            font-size: 20px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .feature-icon {
+            font-size: 36px;
+            margin-bottom: 16px;
+        }
+
+        /* === CODE BLOCK === */
+        .code-block {
+            background: rgba(0,0,0,0.5);
+            border-radius: 12px;
+            padding: 32px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 20px;
+            color: #e2e8f0;
+            line-height: 1.7;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            max-width: 800px;
+        }
+
+        .code-block .keyword { color: #c084fc; }
+        .code-block .string { color: #86efac; }
+        .code-block .comment { color: #64748b; }
+
+        /* === REDUCED MOTION === */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.2s !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- === PROGRESS BAR === -->
+    <div class="progress-bar" id="progressBar"></div>
+
+    <!-- === RECORDING TOOLBAR (top center) === -->
+    <div class="rec-toolbar" id="recToolbar">
+        <span class="rec-dot" id="recDot"></span>
+        <span class="rec-timer" id="recTimer">00:00</span>
+        <button class="rec-btn rec-btn--start" id="btnStart">&#x25CF; &#x5F00;&#x59CB;</button>
+        <button class="rec-btn rec-btn--pause" id="btnPause" disabled>&#x23F8; &#x6682;&#x505C;</button>
+        <button class="rec-btn rec-btn--stop" id="btnStop" disabled>&#x25A0; &#x505C;&#x6B62;</button>
+    </div>
+
+    <!-- Floating hint visible only during recording (keyboard shortcuts) -->
+    <div class="rec-floating-hint" id="recFloatingHint">
+        &#x23FA; REC &mdash; Space: &#x6682;&#x505C;/&#x7EE7;&#x7EED; &nbsp; Esc: &#x505C;&#x6B62;
+    </div>
+
+    <!-- === PRESENTATION === -->
+    <div class="deck-viewport">
+        <main class="deck-stage" id="deckStage">
+
+            <!-- SLIDE 1: Title -->
+            <section class="slide active" data-slide="1">
+                <div class="glow-orb" style="width:600px;height:600px;top:-200px;right:-100px;"></div>
+                <div class="glow-orb" style="width:400px;height:400px;bottom:-150px;left:100px;"></div>
+                <div class="text-block" style="top: 280px; left: 140px; max-width: 1200px;" contenteditable="false">
+                    <span class="tag reveal">PRESENTER STUDIO</span>
+                    <h1 class="reveal" style="margin-top: 12px;">&#x6F14;&#x793A;&#x5F55;&#x5236;<br><span class="accent-text">&#x4E00;&#x4F53;&#x5316;&#x65B9;&#x6848;</span></h1>
+                    <div class="accent-line reveal"></div>
+                    <p class="reveal" style="margin-top: 16px;">&#x5F55;&#x5236;&#x5F53;&#x524D;&#x6807;&#x7B7E;&#x9875; &middot; &#x53EF;&#x7F16;&#x8F91;&#x6587;&#x672C; &middot; &#x5BFC;&#x51FA;&#x5230;&#x6587;&#x4EF6;&#x5939;</p>
+                </div>
+            </section>
+
+            <!-- SLIDE 2: Features -->
+            <section class="slide" data-slide="2">
+                <div class="glow-orb" style="width:500px;height:500px;top:50%;left:50%;transform:translate(-50%,-50%);"></div>
+                <div class="text-block" style="top: 80px; left: 100px; max-width: 1720px;" contenteditable="false">
+                    <span class="tag reveal">&#x6838;&#x5FC3;&#x529F;&#x80FD;</span>
+                    <h2 class="reveal">&#x4E09;&#x5927;&#x80FD;&#x529B;</h2>
+                    <div class="feature-grid reveal" style="transition-delay: 0.3s;">
+                        <div class="feature-card">
+                            <div class="feature-icon">&#x1F3AC;</div>
+                            <h3>&#x6807;&#x7B7E;&#x9875;&#x5F55;&#x5236;</h3>
+                            <p>&#x53EA;&#x5F55;&#x5F53;&#x524D;&#x9875;&#x9762;&#x5185;&#x5BB9;&#xFF0C;&#x4E0D;&#x5305;&#x542B;&#x6D4F;&#x89C8;&#x5668;&#x6807;&#x7B7E;&#x680F;</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">&#x270F;&#xFE0F;</div>
+                            <h3>&#x6587;&#x672C;&#x7F16;&#x8F91;</h3>
+                            <p>&#x53CC;&#x51FB;&#x7F16;&#x8F91;&#x4EFB;&#x610F;&#x6587;&#x672C;&#x5757;&#xFF0C;&#x62D6;&#x62FD;&#x79FB;&#x52A8;&#x4F4D;&#x7F6E;</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">&#x1F4C1;</div>
+                            <h3>&#x6587;&#x4EF6;&#x5939;&#x5BFC;&#x51FA;</h3>
+                            <p>&#x505C;&#x6B62;&#x5F55;&#x5236;&#x540E;&#x9009;&#x62E9;&#x6587;&#x4EF6;&#x5939;&#xFF0C;&#x89C6;&#x9891;&#x81EA;&#x52A8;&#x4FDD;&#x5B58;&#x8FDB;&#x53BB;</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 3: How to use -->
+            <section class="slide" data-slide="3">
+                <div class="glow-orb" style="width:800px;height:800px;top:-300px;left:50%;transform:translateX(-50%);"></div>
+                <div class="text-block" style="top: 200px; left: 140px; max-width: 1400px;" contenteditable="false">
+                    <span class="tag reveal">&#x64CD;&#x4F5C;&#x6307;&#x5357;</span>
+                    <h2 class="reveal">&#x5982;&#x4F55;&#x4F7F;&#x7528;</h2>
+                    <div class="accent-line reveal"></div>
+                    <p class="reveal" style="margin-top: 24px; font-size: 32px; color: var(--text-primary); max-width: 1200px;">
+                        &#x25CF; &#x70B9;&#x51FB;&#x9876;&#x90E8; <strong>&#x201C;&#x5F00;&#x59CB;&#x201D;</strong> &#x2192; &#x5141;&#x8BB8;&#x5F55;&#x5236;&#x5F53;&#x524D;&#x6807;&#x7B7E;&#x9875;
+                    </p>
+                    <p class="reveal" style="margin-top: 16px; font-size: 32px; color: var(--text-primary); max-width: 1200px;">
+                        &#x23F8; &#x70B9;&#x51FB; <strong>&#x201C;&#x6682;&#x505C;&#x201D;</strong> &#x2192; &#x6682;&#x505C;&#x5F55;&#x5236;&#xFF0C;&#x518D;&#x6B21;&#x70B9;&#x51FB;&#x7EE7;&#x7EED;
+                    </p>
+                    <p class="reveal" style="margin-top: 16px; font-size: 32px; color: var(--text-primary); max-width: 1200px;">
+                        &#x25A0; &#x70B9;&#x51FB; <strong>&#x201C;&#x505C;&#x6B62;&#x201D;</strong> &#x2192; &#x9009;&#x62E9;&#x6587;&#x4EF6;&#x5939; &#x2192; &#x89C6;&#x9891;&#x4FDD;&#x5B58;&#x5230;&#x8BE5;&#x76EE;&#x5F55;
+                    </p>
+                    <p class="reveal" style="margin-top: 32px; font-size: 24px; max-width: 1200px;">
+                        &#x952E;&#x76D8;&#xFF1A;&#x2190; &#x2192; &#x7FFB;&#x9875; | &#x53CC;&#x51FB;&#x7F16;&#x8F91;&#x6587;&#x672C; | &#x62D6;&#x62FD;&#x79FB;&#x52A8;&#x6587;&#x672C;&#x5757;
+                    </p>
+                </div>
+            </section>
+
+            <!-- SLIDE 4: End -->
+            <section class="slide" data-slide="4">
+                <div class="glow-orb" style="width:700px;height:700px;top:50%;left:50%;transform:translate(-50%,-50%);"></div>
+                <div class="text-block" style="top: 350px; left: 140px; max-width: 1640px;" contenteditable="false">
+                    <h1 class="reveal" style="text-align: center; width: 100%;">&#x5F00;&#x59CB;&#x5F55;&#x5236; &#x1F3AC;</h1>
+                    <p class="reveal" style="text-align: center; width: 100%; margin-top: 24px; font-size: 32px; color: var(--text-secondary);">
+                        Presenter Studio &#x2014; &#x70B9;&#x51FB;&#x9876;&#x90E8;&#x201C;&#x5F00;&#x59CB;&#x201D;&#x5373;&#x53EF;
+                    </p>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- === SLIDE COUNTER === -->
+    <div class="slide-counter" id="slideCounter">1 / 4</div>
+
+    <!-- === NAV HINT === -->
+    <div class="nav-hint" id="navHint">&#x2190; &#x2192; &#x7FFB;&#x9875; | &#x53CC;&#x51FB;&#x7F16;&#x8F91;&#x6587;&#x672C;</div>
+
+    <script>
+        /* ===========================================
+           SLIDE PRESENTATION CONTROLLER
+           =========================================== */
+        class SlidePresentation {
+            constructor() {
+                this.stage = document.getElementById('deckStage');
+                this.slides = [...this.stage.querySelectorAll('.slide')];
+                this.currentIndex = 0;
+                this.total = this.slides.length;
+                this.counter = document.getElementById('slideCounter');
+                this.progressBar = document.getElementById('progressBar');
+                this.navHint = document.getElementById('navHint');
+
+                this.scaleStage();
+                window.addEventListener('resize', () => this.scaleStage());
+                document.addEventListener('keydown', (e) => this.onKey(e));
+
+                // Touch support
+                let touchStartX = 0;
+                document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+                document.addEventListener('touchend', (e) => {
+                    const dx = e.changedTouches[0].clientX - touchStartX;
+                    if (Math.abs(dx) > 60) {
+                        dx < 0 ? this.next() : this.prev();
+                    }
+                });
+
+                setTimeout(() => { if (this.navHint) this.navHint.style.opacity = '0'; }, 5000);
+                this.updateUI();
+            }
+
+            scaleStage() {
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const scale = Math.min(vw / 1920, vh / 1080);
+                const offsetX = (vw - 1920 * scale) / 2;
+                const offsetY = (vh - 1080 * scale) / 2;
+                this.stage.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+            }
+
+            onKey(e) {
+                if (document.activeElement && document.activeElement.getAttribute('contenteditable') === 'true') return;
+                switch(e.key) {
+                    case 'ArrowRight': case ' ': case 'PageDown':
+                        e.preventDefault(); this.next(); break;
+                    case 'ArrowLeft': case 'PageUp':
+                        e.preventDefault(); this.prev(); break;
+                    case 'Home':
+                        e.preventDefault(); this.goTo(0); break;
+                    case 'End':
+                        e.preventDefault(); this.goTo(this.total - 1); break;
+                }
+            }
+
+            next() { if (this.currentIndex < this.total - 1) this.goTo(this.currentIndex + 1); }
+            prev() { if (this.currentIndex > 0) this.goTo(this.currentIndex - 1); }
+
+            goTo(index) {
+                this.slides[this.currentIndex].classList.remove('active', 'visible');
+                this.currentIndex = index;
+                this.slides[this.currentIndex].classList.add('active', 'visible');
+                this.updateUI();
+            }
+
+            updateUI() {
+                this.counter.textContent = `${this.currentIndex + 1} / ${this.total}`;
+                const progress = ((this.currentIndex + 1) / this.total) * 100;
+                this.progressBar.style.width = `${progress}%`;
+            }
+        }
+
+        /* ===========================================
+           EDITABLE TEXT BLOCK CONTROLLER
+           =========================================== */
+        class TextBlockEditor {
+            constructor() {
+                this.blocks = document.querySelectorAll('.text-block');
+                this.activeBlock = null;
+                this.isDragging = false;
+                this.setupBlocks();
+            }
+
+            setupBlocks() {
+                this.blocks.forEach(block => {
+                    block.addEventListener('dblclick', (e) => {
+                        e.stopPropagation();
+                        this.enterEdit(block);
+                    });
+                    block.addEventListener('mousedown', (e) => {
+                        if (block.getAttribute('contenteditable') === 'true') return;
+                        if (e.target.closest('button')) return;
+                        this.startDrag(block, e);
+                    });
+                });
+
+                document.addEventListener('mousedown', (e) => {
+                    if (this.activeBlock && !this.activeBlock.contains(e.target)) {
+                        this.exitEdit();
+                    }
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && this.activeBlock) {
+                        this.exitEdit();
+                    }
+                });
+            }
+
+            enterEdit(block) {
+                this.exitEdit();
+                block.setAttribute('contenteditable', 'true');
+                block.classList.add('editing');
+                block.focus();
+                this.activeBlock = block;
+            }
+
+            exitEdit() {
+                if (this.activeBlock) {
+                    this.activeBlock.setAttribute('contenteditable', 'false');
+                    this.activeBlock.classList.remove('editing');
+                    this.activeBlock = null;
+                }
+            }
+
+            startDrag(block, e) {
+                if (block.classList.contains('editing')) return;
+                this.isDragging = true;
+                block.classList.add('dragging');
+
+                const stage = document.getElementById('deckStage');
+                const stageRect = stage.getBoundingClientRect();
+                const scale = stageRect.width / 1920;
+                const blockRect = block.getBoundingClientRect();
+                const offsetX = (e.clientX - blockRect.left) / scale;
+                const offsetY = (e.clientY - blockRect.top) / scale;
+
+                const onMove = (moveEvent) => {
+                    const x = (moveEvent.clientX - stageRect.left) / scale - offsetX;
+                    const y = (moveEvent.clientY - stageRect.top) / scale - offsetY;
+                    block.style.left = `${Math.max(0, x)}px`;
+                    block.style.top = `${Math.max(0, y)}px`;
+                };
+
+                const onUp = () => {
+                    this.isDragging = false;
+                    block.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            }
+        }
+
+        /* ===========================================
+           DUAL RECORDER
+           - Tab capture (current tab only, no browser chrome)
+           - Camera capture (no on-screen preview, records to file)
+           - Both exported to a user-picked folder
+           - High bitrate for sharp video (8 Mbps slides, 4 Mbps camera)
+           Controls: Start / Pause / Stop (top center toolbar)
+           =========================================== */
+        class DualRecorder {
+            constructor() {
+                // Streams
+                this.tabStream = null;
+                this.cameraStream = null;
+
+                // Recorders
+                this.tabRecorder = null;
+                this.cameraRecorder = null;
+                this.tabChunks = [];
+                this.cameraChunks = [];
+
+                // State
+                this.state = 'idle'; // idle | recording | paused
+                this.startTime = null;
+                this.elapsed = 0;
+                this.timerInterval = null;
+
+                // DOM
+                this.btnStart = document.getElementById('btnStart');
+                this.btnPause = document.getElementById('btnPause');
+                this.btnStop = document.getElementById('btnStop');
+                this.recDot = document.getElementById('recDot');
+                this.recTimer = document.getElementById('recTimer');
+
+                this.btnStart.addEventListener('click', () => this.start());
+                this.btnPause.addEventListener('click', () => this.togglePause());
+                this.btnStop.addEventListener('click', () => this.stop());
+            }
+
+            async start() {
+                // 1. Get microphone first (so presenter voice is captured)
+                let micStream = null;
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: { echoCancellation: true, noiseSuppression: true },
+                        video: false
+                    });
+                } catch (err) {
+                    console.warn('Microphone not available:', err.message);
+                    this.showToast('\u26A0\uFE0F \u9EA6\u514B\u98CE\u4E0D\u53EF\u7528\uFF0C\u5C06\u65E0\u6CD5\u5F55\u5236\u58F0\u97F3');
+                }
+
+                // 2. Capture current tab (slides)
+                try {
+                    const displayOptions = {
+                        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+                        audio: true // tab system audio (if any)
+                    };
+                    try { displayOptions.preferCurrentTab = true; } catch(e) {}
+                    try { displayOptions.selfBrowserSurface = 'include'; } catch(e) {}
+
+                    this.tabStream = await navigator.mediaDevices.getDisplayMedia(displayOptions);
+
+                    const videoTrack = this.tabStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        videoTrack.onended = () => {
+                            if (this.state !== 'idle') this.stop();
+                        };
+                    }
+                } catch (err) {
+                    console.error('Tab capture denied:', err.name, err.message);
+                    this.showToast('\u274C \u5C4F\u5E55\u5F55\u5236\u88AB\u62D2\u7EDD\u6216\u4E0D\u53EF\u7528');
+                    if (micStream) micStream.getTracks().forEach(t => t.stop());
+                    return;
+                }
+
+                // 3. Capture camera (no preview on page)
+                try {
+                    this.cameraStream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                        audio: false
+                    });
+                } catch (err) {
+                    console.warn('Camera not available, will only record slides:', err.message);
+                    this.cameraStream = null;
+                }
+
+                // 4. Build final streams for recording
+                // Slides stream = tab video + tab audio (no mic)
+                const slidesStream = new MediaStream();
+                this.tabStream.getVideoTracks().forEach(t => slidesStream.addTrack(t));
+                this.tabStream.getAudioTracks().forEach(t => slidesStream.addTrack(t));
+
+                // Camera stream = camera video + mic audio
+                let cameraRecordStream = null;
+                if (this.cameraStream) {
+                    cameraRecordStream = new MediaStream();
+                    this.cameraStream.getVideoTracks().forEach(t => cameraRecordStream.addTrack(t));
+                    if (micStream) {
+                        micStream.getAudioTracks().forEach(t => cameraRecordStream.addTrack(t));
+                    }
+                }
+
+                // Store mic stream reference for cleanup
+                this.micStream = micStream;
+
+                const mimeType = this.getBestMimeType();
+                console.log('[DualRecorder] Using mimeType:', mimeType);
+
+                // 6. Tab recorder — high bitrate for crisp slides
+                this.tabChunks = [];
+                const tabOptions = { videoBitsPerSecond: 8_000_000 };
+                if (mimeType) tabOptions.mimeType = mimeType;
+                this.tabRecorder = new MediaRecorder(slidesStream, tabOptions);
+                this.tabRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) this.tabChunks.push(e.data);
+                };
+                this.tabRecorder.onerror = (e) => console.error('[TabRecorder] error:', e);
+
+                // 7. Camera recorder
+                if (cameraRecordStream) {
+                    this.cameraChunks = [];
+                    const camOptions = { videoBitsPerSecond: 4_000_000 };
+                    if (mimeType) camOptions.mimeType = mimeType;
+                    this.cameraRecorder = new MediaRecorder(cameraRecordStream, camOptions);
+                    this.cameraRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0) this.cameraChunks.push(e.data);
+                    };
+                    this.cameraRecorder.onerror = (e) => console.error('[CameraRecorder] error:', e);
+                } else {
+                    this.cameraRecorder = null;
+                }
+
+                // 8. Start both
+                this.tabRecorder.start(1000);
+                if (this.cameraRecorder) this.cameraRecorder.start(1000);
+
+                this.state = 'recording';
+                this.elapsed = 0;
+                this.startTime = Date.now();
+                this.startTimer();
+                this.updateUI();
+                console.log('[DualRecorder] Recording started. Tab:', !!this.tabStream, 'Camera:', !!this.cameraStream, 'Mic:', !!micStream);
+            }
+
+            togglePause() {
+                if (this.state === 'recording') {
+                    this.tabRecorder.pause();
+                    if (this.cameraRecorder) this.cameraRecorder.pause();
+                    this.state = 'paused';
+                    this.elapsed += (Date.now() - this.startTime) / 1000;
+                    this.stopTimer();
+                } else if (this.state === 'paused') {
+                    this.tabRecorder.resume();
+                    if (this.cameraRecorder) this.cameraRecorder.resume();
+                    this.state = 'recording';
+                    this.startTime = Date.now();
+                    this.startTimer();
+                }
+                this.updateUI();
+            }
+
+            stop() {
+                if (this.state === 'idle') return;
+                if (this.state === 'recording') {
+                    this.elapsed += (Date.now() - this.startTime) / 1000;
+                }
+                this.stopTimer();
+
+                // Count how many recorders need to finish before export
+                this.pendingStops = 0;
+
+                if (this.tabRecorder && this.tabRecorder.state !== 'inactive') {
+                    this.pendingStops++;
+                    this.tabRecorder.onstop = () => {
+                        this.pendingStops--;
+                        if (this.pendingStops === 0) this.handleExport();
+                    };
+                    this.tabRecorder.stop();
+                }
+                if (this.cameraRecorder && this.cameraRecorder.state !== 'inactive') {
+                    this.pendingStops++;
+                    this.cameraRecorder.onstop = () => {
+                        this.pendingStops--;
+                        if (this.pendingStops === 0) this.handleExport();
+                    };
+                    this.cameraRecorder.stop();
+                }
+
+                // If nothing was recording
+                if (this.pendingStops === 0) this.handleExport();
+
+                this.state = 'idle';
+                this.updateUI();
+            }
+
+            async handleExport() {
+                const mimeType = this.tabRecorder ? this.tabRecorder.mimeType : 'video/webm';
+                const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+                const blobType = mimeType.includes('mp4') ? 'video/mp4' : 'video/webm';
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+                const slidesBlob = this.tabChunks.length > 0
+                    ? new Blob(this.tabChunks, { type: blobType }) : null;
+                const cameraBlob = this.cameraChunks.length > 0
+                    ? new Blob(this.cameraChunks, { type: blobType }) : null;
+
+                const slidesName = `slides-${timestamp}.${ext}`;
+                const cameraName = `camera-${timestamp}.${ext}`;
+
+                // Clean up streams
+                if (this.tabStream) {
+                    this.tabStream.getTracks().forEach(t => t.stop());
+                    this.tabStream = null;
+                }
+                if (this.cameraStream) {
+                    this.cameraStream.getTracks().forEach(t => t.stop());
+                    this.cameraStream = null;
+                }
+                if (this.micStream) {
+                    this.micStream.getTracks().forEach(t => t.stop());
+                    this.micStream = null;
+                }
+
+                // Try File System Access API — save both files to one folder
+                if ('showDirectoryPicker' in window) {
+                    try {
+                        const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+
+                        if (slidesBlob) {
+                            const fh = await dirHandle.getFileHandle(slidesName, { create: true });
+                            const w = await fh.createWritable();
+                            await w.write(slidesBlob);
+                            await w.close();
+                        }
+
+                        if (cameraBlob) {
+                            const fh = await dirHandle.getFileHandle(cameraName, { create: true });
+                            const w = await fh.createWritable();
+                            await w.write(cameraBlob);
+                            await w.close();
+                        }
+
+                        const count = (slidesBlob ? 1 : 0) + (cameraBlob ? 1 : 0);
+                        this.showToast(`\u2705 \u5DF2\u4FDD\u5B58 ${count} \u4E2A\u6587\u4EF6\u5230\u6587\u4EF6\u5939`);
+                        return;
+                    } catch (err) {
+                        if (err.name === 'AbortError') {
+                            this.showToast('\u274C \u5DF2\u53D6\u6D88\u4FDD\u5B58');
+                            return;
+                        }
+                        console.warn('Directory picker failed, falling back to download:', err);
+                    }
+                }
+
+                // Fallback: standard downloads
+                if (slidesBlob) this.downloadBlob(slidesBlob, slidesName);
+                if (cameraBlob) this.downloadBlob(cameraBlob, cameraName);
+                const count = (slidesBlob ? 1 : 0) + (cameraBlob ? 1 : 0);
+                this.showToast(`\u2B07\uFE0F \u5DF2\u4E0B\u8F7D ${count} \u4E2A\u6587\u4EF6`);
+            }
+
+            downloadBlob(blob, filename) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            }
+
+            showToast(message) {
+                const toast = document.createElement('div');
+                toast.textContent = message;
+                Object.assign(toast.style, {
+                    position: 'fixed',
+                    bottom: '60px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(15,15,19,0.92)',
+                    backdropFilter: 'blur(8px)',
+                    color: '#fff',
+                    padding: '10px 20px',
+                    borderRadius: '20px',
+                    fontSize: '14px',
+                    fontFamily: 'Inter, system-ui, sans-serif',
+                    zIndex: '99999',
+                    border: '1px solid rgba(99,102,241,0.3)',
+                    transition: 'opacity 0.3s'
+                });
+                document.body.appendChild(toast);
+                setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+                setTimeout(() => { toast.remove(); }, 3000);
+            }
+
+            getBestMimeType() {
+                const candidates = [
+                    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+                    'video/mp4;codecs=h264,aac',
+                    'video/mp4',
+                    'video/webm;codecs=vp9,opus',
+                    'video/webm;codecs=vp8,opus',
+                    'video/webm'
+                ];
+                for (const type of candidates) {
+                    if (MediaRecorder.isTypeSupported(type)) return type;
+                }
+                return '';
+            }
+
+            updateUI() {
+                const isIdle = this.state === 'idle';
+                const isPaused = this.state === 'paused';
+
+                this.btnStart.disabled = !isIdle;
+                this.btnPause.disabled = isIdle;
+                this.btnStop.disabled = isIdle;
+
+                if (isPaused) {
+                    this.btnPause.textContent = '\u25B6 \u7EE7\u7EED';
+                    this.btnPause.className = 'rec-btn rec-btn--resume';
+                } else {
+                    this.btnPause.textContent = '\u23F8 \u6682\u505C';
+                    this.btnPause.className = 'rec-btn rec-btn--pause';
+                }
+
+                this.recDot.classList.toggle('active', !isIdle);
+                this.recDot.classList.toggle('paused', isPaused);
+                document.body.classList.toggle('is-recording', !isIdle);
+
+                if (isIdle) this.recTimer.textContent = '00:00';
+            }
+
+            startTimer() {
+                this.timerInterval = setInterval(() => {
+                    const current = this.elapsed + (Date.now() - this.startTime) / 1000;
+                    const total = Math.floor(current);
+                    const mm = String(Math.floor(total / 60)).padStart(2, '0');
+                    const ss = String(total % 60).padStart(2, '0');
+                    this.recTimer.textContent = `${mm}:${ss}`;
+                }, 500);
+            }
+
+            stopTimer() {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+            }
+        }
+
+        /* ===========================================
+           INITIALIZE ALL MODULES
+           =========================================== */
+        const presentation = new SlidePresentation();
+        const editor = new TextBlockEditor();
+        const recorder = new DualRecorder();
+
+        /* ===========================================
+           KEYBOARD SHORTCUTS FOR RECORDING
+           Space  → 暂停 / 继续
+           Esc    → 停止录制
+           =========================================== */
+        document.addEventListener('keydown', (e) => {
+            // Don't capture keys when editing text blocks
+            if (editor.activeBlock) return;
+
+            if (e.code === 'Space' && recorder.state !== 'idle') {
+                e.preventDefault();
+                recorder.togglePause();
+            } else if (e.key === 'Escape' && recorder.state !== 'idle') {
+                e.preventDefault();
+                recorder.stop();
+            }
+        });
+    </script>
+</body>
+</html>

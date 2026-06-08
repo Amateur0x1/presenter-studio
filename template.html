@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Untitled Presentation</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap">
+    <style>
+        /* === THEME VARIABLES === */
+        :root {
+            --bg-primary: #0f0f13;
+            --bg-secondary: #1a1a22;
+            --text-primary: #f0f0f2;
+            --text-secondary: #8a8a9a;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.25);
+            --slide-bg: #0f0f13;
+            --stage-bg: #000;
+
+            --font-display: 'Outfit', sans-serif;
+            --font-body: 'Inter', sans-serif;
+            --title-size: 96px;
+            --subtitle-size: 36px;
+            --body-size: 28px;
+
+            --slide-padding: 72px;
+            --content-gap: 32px;
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --duration-normal: 0.6s;
+        }
+
+        /* === RESET === */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        /* === VIEWPORT BASE (fixed 16:9 stage) === */
+        html, body {
+            width: 100%; height: 100%; margin: 0;
+            overflow: hidden;
+            background: var(--stage-bg, #000);
+        }
+
+        .deck-viewport {
+            position: fixed; inset: 0;
+            overflow: hidden;
+            background: var(--stage-bg, #000);
+        }
+
+        .deck-stage {
+            position: absolute; left: 0; top: 0;
+            width: 1920px; height: 1080px;
+            overflow: hidden;
+            transform-origin: 0 0;
+            background: var(--slide-bg, #fff);
+        }
+
+        .slide {
+            position: absolute; inset: 0;
+            width: 1920px; height: 1080px;
+            overflow: hidden;
+            display: block;
+            visibility: hidden; opacity: 0;
+            pointer-events: none;
+            background: var(--slide-bg, #fff);
+            transition: opacity 0.5s var(--ease-out-expo);
+        }
+
+        .slide.active, .slide.visible {
+            visibility: visible; opacity: 1;
+            pointer-events: auto; z-index: 1;
+        }
+
+        img, video, canvas, svg {
+            max-width: 100%; max-height: 100%;
+        }
+
+        /* === SLIDE CONTENT STYLES === */
+        .slide h1 {
+            font-family: var(--font-display);
+            font-size: var(--title-size);
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1.1;
+            letter-spacing: -2px;
+        }
+
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 64px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            letter-spacing: -1px;
+        }
+
+        .slide p {
+            font-family: var(--font-body);
+            font-size: var(--body-size);
+            color: var(--text-secondary);
+            line-height: 1.6;
+            max-width: 900px;
+        }
+
+        /* === TEXT BLOCK (editable + draggable) === */
+        .text-block {
+            position: absolute;
+            cursor: grab;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            user-select: none;
+        }
+
+        .text-block:hover {
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .text-block.editing {
+            cursor: text;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+            user-select: text;
+        }
+
+        .text-block.dragging {
+            opacity: 0.85;
+            cursor: grabbing;
+        }
+
+        /* === RECORDING TOOLBAR === */
+        .rec-toolbar {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(15, 15, 19, 0.9);
+            backdrop-filter: blur(12px);
+            padding: 8px 16px;
+            border-radius: 30px;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .rec-toolbar .rec-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #f0f0f2;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .rec-toolbar .rec-btn:hover:not(:disabled) {
+            background: rgba(99, 102, 241, 0.3);
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        .rec-toolbar .rec-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .rec-btn--start { border-color: rgba(239, 68, 68, 0.4) !important; }
+        .rec-btn--start:hover:not(:disabled) {
+            background: rgba(239, 68, 68, 0.25) !important;
+        }
+
+        .rec-btn--stop { border-color: rgba(239, 68, 68, 0.4) !important; }
+        .rec-btn--stop:hover:not(:disabled) {
+            background: rgba(239, 68, 68, 0.25) !important;
+        }
+
+        .rec-btn--resume {
+            border-color: rgba(34, 197, 94, 0.4) !important;
+        }
+        .rec-btn--resume:hover:not(:disabled) {
+            background: rgba(34, 197, 94, 0.25) !important;
+        }
+
+        .rec-toolbar .rec-timer {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            min-width: 48px;
+            text-align: center;
+        }
+
+        .rec-toolbar .rec-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #ef4444;
+            display: none;
+            animation: pulse-dot 1.2s infinite;
+        }
+
+        .rec-toolbar .rec-dot.active { display: block; }
+        .rec-toolbar .rec-dot.paused { animation: none; opacity: 0.5; }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* === RECORDING: HIDE ALL UI FROM CAPTURE === */
+        body.is-recording .rec-toolbar {
+            display: none !important;
+        }
+        body.is-recording .slide-counter,
+        body.is-recording .nav-hint,
+        body.is-recording .progress-bar {
+            display: none !important;
+        }
+
+        /* === SLIDE COUNTER === */
+        .slide-counter {
+            position: fixed;
+            bottom: 20px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            font-family: var(--font-body);
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px 14px;
+            border-radius: 16px;
+            backdrop-filter: blur(8px);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- === RECORDING TOOLBAR (hidden during recording) === -->
+    <div class="rec-toolbar" id="recToolbar">
+        <span class="rec-dot" id="recDot"></span>
+        <span class="rec-timer" id="recTimer">00:00</span>
+        <button class="rec-btn rec-btn--start" id="btnStart">&#x25CF; 开始</button>
+        <button class="rec-btn rec-btn--pause" id="btnPause" disabled>&#x23F8; 暂停</button>
+        <button class="rec-btn rec-btn--stop" id="btnStop" disabled>&#x25A0; 停止</button>
+    </div>
+
+    <!-- === PRESENTATION === -->
+    <div class="deck-viewport">
+        <main class="deck-stage" id="deckStage">
+
+            <!-- ============================================
+                 在下面添加你的幻灯片
+                 每张幻灯片是一个 <section class="slide">
+                 第一张加 class="slide active"
+                 文本用 .text-block 包裹，可编辑+可拖拽
+                 坐标基于 1920x1080
+                 ============================================ -->
+
+            <section class="slide active" data-slide="1">
+                <div class="text-block" style="top: 400px; left: 140px;" contenteditable="false">
+                    <h1>在这里写标题</h1>
+                    <p style="margin-top: 20px;">双击编辑文本 · 拖拽移动位置</p>
+                </div>
+            </section>
+
+            <!-- 复制下面的模板添加更多幻灯片:
+            <section class="slide" data-slide="2">
+                <div class="text-block" style="top: 200px; left: 140px;" contenteditable="false">
+                    <h2>幻灯片标题</h2>
+                    <p style="margin-top: 16px;">内容写在这里</p>
+                </div>
+            </section>
+            -->
+
+        </main>
+    </div>
+
+    <!-- === SLIDE COUNTER === -->
+    <div class="slide-counter" id="slideCounter">1 / 1</div>
+
+    <script>
+        /* ===========================================
+           SLIDE PRESENTATION CONTROLLER
+           =========================================== */
+        class SlidePresentation {
+            constructor() {
+                this.stage = document.getElementById('deckStage');
+                this.slides = Array.from(this.stage.querySelectorAll('.slide'));
+                this.current = 0;
+                this.counter = document.getElementById('slideCounter');
+
+                this.scaleStage();
+                window.addEventListener('resize', () => this.scaleStage());
+                document.addEventListener('keydown', (e) => this.onKey(e));
+
+                this.stage.addEventListener('touchstart', (e) => this.onTouchStart(e));
+                this.stage.addEventListener('touchend', (e) => this.onTouchEnd(e));
+
+                this.show(0);
+            }
+
+            scaleStage() {
+                const vw = window.innerWidth, vh = window.innerHeight;
+                const scale = Math.min(vw / 1920, vh / 1080);
+                const left = (vw - 1920 * scale) / 2;
+                const top = (vh - 1080 * scale) / 2;
+                this.stage.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+            }
+
+            show(index) {
+                this.slides.forEach((s, i) => {
+                    s.classList.toggle('active', i === index);
+                    s.classList.remove('visible');
+                });
+                this.current = index;
+                this.counter.textContent = `${index + 1} / ${this.slides.length}`;
+            }
+
+            next() { if (this.current < this.slides.length - 1) this.show(this.current + 1); }
+            prev() { if (this.current > 0) this.show(this.current - 1); }
+
+            onKey(e) {
+                if (e.target.isContentEditable) return;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); this.next(); }
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); this.prev(); }
+            }
+
+            onTouchStart(e) { this.touchStartX = e.changedTouches[0].screenX; }
+            onTouchEnd(e) {
+                const dx = e.changedTouches[0].screenX - this.touchStartX;
+                if (dx < -50) this.next();
+                else if (dx > 50) this.prev();
+            }
+        }
+
+        /* ===========================================
+           TEXT BLOCK EDITOR
+           Double-click to edit, drag to reposition
+           =========================================== */
+        class TextBlockEditor {
+            constructor() {
+                this.activeBlock = null;
+                this.isDragging = false;
+                this.stage = document.getElementById('deckStage');
+
+                this.stage.querySelectorAll('.text-block').forEach(block => {
+                    block.addEventListener('dblclick', () => this.enterEdit(block));
+                    block.addEventListener('mousedown', (e) => {
+                        if (!block.classList.contains('editing')) {
+                            this.startDrag(block, e);
+                        }
+                    });
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && this.activeBlock) {
+                        this.exitEdit();
+                    }
+                });
+            }
+
+            enterEdit(block) {
+                this.exitEdit();
+                block.setAttribute('contenteditable', 'true');
+                block.classList.add('editing');
+                block.focus();
+                this.activeBlock = block;
+            }
+
+            exitEdit() {
+                if (this.activeBlock) {
+                    this.activeBlock.setAttribute('contenteditable', 'false');
+                    this.activeBlock.classList.remove('editing');
+                    this.activeBlock = null;
+                }
+            }
+
+            startDrag(block, e) {
+                if (block.classList.contains('editing')) return;
+                this.isDragging = true;
+                block.classList.add('dragging');
+                const startX = e.clientX, startY = e.clientY;
+                const stage = this.stage;
+                const scale = stage.getBoundingClientRect().width / 1920;
+                const origLeft = parseInt(block.style.left) || 0;
+                const origTop = parseInt(block.style.top) || 0;
+
+                const onMove = (ev) => {
+                    block.style.left = origLeft + (ev.clientX - startX) / scale + 'px';
+                    block.style.top = origTop + (ev.clientY - startY) / scale + 'px';
+                };
+                const onUp = () => {
+                    this.isDragging = false;
+                    block.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            }
+        }
+
+        /* ===========================================
+           DUAL RECORDER
+           - Tab capture (current tab only)
+           - Camera capture (no preview, records to file)
+           - Mic audio → camera file only
+           - Tab audio → slides file only
+           - Export both to user-picked folder
+           - High bitrate: 8 Mbps slides, 4 Mbps camera
+           Controls: Start / Pause / Stop (toolbar, hidden during rec)
+           Keyboard: Space = pause/resume, Esc = stop
+           =========================================== */
+        class DualRecorder {
+            constructor() {
+                this.tabStream = null;
+                this.cameraStream = null;
+                this.micStream = null;
+
+                this.tabRecorder = null;
+                this.cameraRecorder = null;
+                this.tabChunks = [];
+                this.cameraChunks = [];
+
+                this.state = 'idle';
+                this.startTime = null;
+                this.elapsed = 0;
+                this.timerInterval = null;
+
+                this.btnStart = document.getElementById('btnStart');
+                this.btnPause = document.getElementById('btnPause');
+                this.btnStop = document.getElementById('btnStop');
+                this.recDot = document.getElementById('recDot');
+                this.recTimer = document.getElementById('recTimer');
+
+                this.btnStart.addEventListener('click', () => this.start());
+                this.btnPause.addEventListener('click', () => this.togglePause());
+                this.btnStop.addEventListener('click', () => this.stop());
+            }
+
+            async start() {
+                // 1. Get microphone
+                let micStream = null;
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: { echoCancellation: true, noiseSuppression: true },
+                        video: false
+                    });
+                } catch (err) {
+                    console.warn('Microphone not available:', err.message);
+                }
+
+                // 2. Capture current tab
+                try {
+                    const displayOptions = {
+                        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+                        audio: true
+                    };
+                    try { displayOptions.preferCurrentTab = true; } catch(e) {}
+                    try { displayOptions.selfBrowserSurface = 'include'; } catch(e) {}
+
+                    this.tabStream = await navigator.mediaDevices.getDisplayMedia(displayOptions);
+
+                    const videoTrack = this.tabStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        videoTrack.onended = () => { if (this.state !== 'idle') this.stop(); };
+                    }
+                } catch (err) {
+                    if (micStream) micStream.getTracks().forEach(t => t.stop());
+                    this.showToast('\u274C 屏幕录制被拒绝');
+                    return;
+                }
+
+                // 3. Capture camera (no preview)
+                try {
+                    this.cameraStream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                        audio: false
+                    });
+                } catch (err) {
+                    this.cameraStream = null;
+                }
+
+                // 4. Build streams
+                const slidesStream = new MediaStream();
+                this.tabStream.getVideoTracks().forEach(t => slidesStream.addTrack(t));
+                this.tabStream.getAudioTracks().forEach(t => slidesStream.addTrack(t));
+
+                let cameraRecordStream = null;
+                if (this.cameraStream) {
+                    cameraRecordStream = new MediaStream();
+                    this.cameraStream.getVideoTracks().forEach(t => cameraRecordStream.addTrack(t));
+                    if (micStream) micStream.getAudioTracks().forEach(t => cameraRecordStream.addTrack(t));
+                }
+
+                this.micStream = micStream;
+                const mimeType = this.getBestMimeType();
+
+                // 5. Tab recorder
+                this.tabChunks = [];
+                const tabOpts = { videoBitsPerSecond: 8_000_000 };
+                if (mimeType) tabOpts.mimeType = mimeType;
+                this.tabRecorder = new MediaRecorder(slidesStream, tabOpts);
+                this.tabRecorder.ondataavailable = (e) => { if (e.data.size > 0) this.tabChunks.push(e.data); };
+
+                // 6. Camera recorder
+                if (cameraRecordStream) {
+                    this.cameraChunks = [];
+                    const camOpts = { videoBitsPerSecond: 4_000_000 };
+                    if (mimeType) camOpts.mimeType = mimeType;
+                    this.cameraRecorder = new MediaRecorder(cameraRecordStream, camOpts);
+                    this.cameraRecorder.ondataavailable = (e) => { if (e.data.size > 0) this.cameraChunks.push(e.data); };
+                } else {
+                    this.cameraRecorder = null;
+                }
+
+                // 7. Start
+                this.tabRecorder.start(1000);
+                if (this.cameraRecorder) this.cameraRecorder.start(1000);
+
+                this.state = 'recording';
+                this.elapsed = 0;
+                this.startTime = Date.now();
+                this.startTimer();
+                this.updateUI();
+            }
+
+            togglePause() {
+                if (this.state === 'recording') {
+                    this.tabRecorder.pause();
+                    if (this.cameraRecorder) this.cameraRecorder.pause();
+                    this.state = 'paused';
+                    this.elapsed += (Date.now() - this.startTime) / 1000;
+                    this.stopTimer();
+                } else if (this.state === 'paused') {
+                    this.tabRecorder.resume();
+                    if (this.cameraRecorder) this.cameraRecorder.resume();
+                    this.state = 'recording';
+                    this.startTime = Date.now();
+                    this.startTimer();
+                }
+                this.updateUI();
+            }
+
+            stop() {
+                if (this.state === 'idle') return;
+                if (this.state === 'recording') {
+                    this.elapsed += (Date.now() - this.startTime) / 1000;
+                }
+                this.stopTimer();
+
+                this.pendingStops = 0;
+                if (this.tabRecorder && this.tabRecorder.state !== 'inactive') {
+                    this.pendingStops++;
+                    this.tabRecorder.onstop = () => { this.pendingStops--; if (this.pendingStops === 0) this.handleExport(); };
+                    this.tabRecorder.stop();
+                }
+                if (this.cameraRecorder && this.cameraRecorder.state !== 'inactive') {
+                    this.pendingStops++;
+                    this.cameraRecorder.onstop = () => { this.pendingStops--; if (this.pendingStops === 0) this.handleExport(); };
+                    this.cameraRecorder.stop();
+                }
+                if (this.pendingStops === 0) this.handleExport();
+
+                this.state = 'idle';
+                this.updateUI();
+            }
+
+            async handleExport() {
+                const mimeType = this.tabRecorder ? this.tabRecorder.mimeType : 'video/webm';
+                const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+                const blobType = mimeType.includes('mp4') ? 'video/mp4' : 'video/webm';
+                const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+                const slidesBlob = this.tabChunks.length > 0 ? new Blob(this.tabChunks, { type: blobType }) : null;
+                const cameraBlob = this.cameraChunks.length > 0 ? new Blob(this.cameraChunks, { type: blobType }) : null;
+
+                const slidesName = `slides-${ts}.${ext}`;
+                const cameraName = `camera-${ts}.${ext}`;
+
+                // Cleanup
+                if (this.tabStream) { this.tabStream.getTracks().forEach(t => t.stop()); this.tabStream = null; }
+                if (this.cameraStream) { this.cameraStream.getTracks().forEach(t => t.stop()); this.cameraStream = null; }
+                if (this.micStream) { this.micStream.getTracks().forEach(t => t.stop()); this.micStream = null; }
+
+                // Save to folder
+                if ('showDirectoryPicker' in window) {
+                    try {
+                        const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+                        if (slidesBlob) { const f = await dir.getFileHandle(slidesName, { create: true }); const w = await f.createWritable(); await w.write(slidesBlob); await w.close(); }
+                        if (cameraBlob) { const f = await dir.getFileHandle(cameraName, { create: true }); const w = await f.createWritable(); await w.write(cameraBlob); await w.close(); }
+                        const n = (slidesBlob ? 1 : 0) + (cameraBlob ? 1 : 0);
+                        this.showToast(`\u2705 已保存 ${n} 个文件到文件夹`);
+                        return;
+                    } catch (err) {
+                        if (err.name === 'AbortError') { this.showToast('\u274C 已取消保存'); return; }
+                    }
+                }
+
+                // Fallback downloads
+                if (slidesBlob) this.downloadBlob(slidesBlob, slidesName);
+                if (cameraBlob) this.downloadBlob(cameraBlob, cameraName);
+                this.showToast('\u2B07\uFE0F 已下载视频文件');
+            }
+
+            downloadBlob(blob, name) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            }
+
+            showToast(msg) {
+                const t = document.createElement('div');
+                t.textContent = msg;
+                Object.assign(t.style, { position:'fixed', bottom:'60px', left:'50%', transform:'translateX(-50%)', background:'rgba(15,15,19,0.92)', backdropFilter:'blur(8px)', color:'#fff', padding:'10px 20px', borderRadius:'20px', fontSize:'14px', fontFamily:'Inter,system-ui,sans-serif', zIndex:'99999', border:'1px solid rgba(99,102,241,0.3)', transition:'opacity 0.3s' });
+                document.body.appendChild(t);
+                setTimeout(() => { t.style.opacity = '0'; }, 2500);
+                setTimeout(() => { t.remove(); }, 3000);
+            }
+
+            getBestMimeType() {
+                const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=h264,aac','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+                for (const t of types) { if (MediaRecorder.isTypeSupported(t)) return t; }
+                return '';
+            }
+
+            updateUI() {
+                const isIdle = this.state === 'idle';
+                const isPaused = this.state === 'paused';
+                this.btnStart.disabled = !isIdle;
+                this.btnPause.disabled = isIdle;
+                this.btnStop.disabled = isIdle;
+                if (isPaused) { this.btnPause.textContent = '\u25B6 继续'; this.btnPause.className = 'rec-btn rec-btn--resume'; }
+                else { this.btnPause.textContent = '\u23F8 暂停'; this.btnPause.className = 'rec-btn rec-btn--pause'; }
+                this.recDot.classList.toggle('active', !isIdle);
+                this.recDot.classList.toggle('paused', isPaused);
+                document.body.classList.toggle('is-recording', !isIdle);
+                if (isIdle) this.recTimer.textContent = '00:00';
+            }
+
+            startTimer() {
+                this.timerInterval = setInterval(() => {
+                    const s = Math.floor(this.elapsed + (Date.now() - this.startTime) / 1000);
+                    this.recTimer.textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+                }, 500);
+            }
+
+            stopTimer() { clearInterval(this.timerInterval); this.timerInterval = null; }
+        }
+
+        /* ===========================================
+           INITIALIZE
+           =========================================== */
+        const presentation = new SlidePresentation();
+        const editor = new TextBlockEditor();
+        const recorder = new DualRecorder();
+
+        /* === KEYBOARD SHORTCUTS === */
+        // Space → pause/resume | Esc → stop
+        document.addEventListener('keydown', (e) => {
+            if (editor.activeBlock) return;
+            if (e.code === 'Space' && recorder.state !== 'idle') { e.preventDefault(); recorder.togglePause(); }
+            else if (e.key === 'Escape' && recorder.state !== 'idle') { e.preventDefault(); recorder.stop(); }
+        });
+    </script>
+</body>
+</html>
