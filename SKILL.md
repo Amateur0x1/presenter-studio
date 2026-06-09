@@ -16,6 +16,8 @@ description: 生成可录制视频的 HTML 演示文稿。当用户需要做演�
 - 麦克风收音（音频存入摄像头文件）
 - 双文件导出到用户选的文件夹（slides + camera）
 - 可编辑文本块（双击编辑、拖拽移动）
+- 未保存的浏览器内编辑在刷新后丢失
+- Chrome/Edge 下可点击「保存 HTML」把当前编辑结果覆盖写入用户选择的 HTML 文件
 - 键盘快捷键控制录制（Space 暂停/继续，Esc 停止）
 
 ## 工作流程
@@ -41,6 +43,7 @@ description: 生成可录制视频的 HTML 演示文稿。当用户需要做演�
 **生成规则：**
 
 - 保持模板中所有 JS 逻辑不变（SlidePresentation、TextBlockEditor、DualRecorder）
+- 保持 HTML 文件保存逻辑不变（DeckPersistence）
 - 保持录制工具栏、键盘快捷键等交互代码不变
 - 只修改：`<title>`、`:root` CSS 变量、`<main class="deck-stage">` 内的幻灯片内容
 - 每张幻灯片是一个 `<section class="slide" data-slide="N">`，第一张加 `active` class
@@ -55,6 +58,8 @@ description: 生成可录制视频的 HTML 演示文稿。当用户需要做演�
    - 用浏览器打开 `http://localhost:8080/文件名.html`
    - 方向键翻页
    - 顶部工具栏点"开始"录制，录制中工具栏自动隐藏
+   - 双击文字修改、拖拽文本块后只是临时修改，刷新会丢失
+   - 点击"保存 HTML"后选择要覆盖的 `.html` 文件，Chrome/Edge 会把当前修改写回该文件
    - Space 暂停/继续，Esc 停止并导出
    - 停止后选一个文件夹，会保存 slides 和 camera 两个视频文件
 

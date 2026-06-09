@@ -168,6 +168,13 @@
             cursor: not-allowed;
         }
 
+        .rec-btn--save {
+            border-color: rgba(79, 195, 161, 0.45) !important;
+        }
+        .rec-btn--save:hover:not(:disabled) {
+            background: rgba(79, 195, 161, 0.25) !important;
+        }
+
         .rec-btn--start { border-color: rgba(239, 68, 68, 0.4) !important; }
         .rec-btn--start:hover:not(:disabled) {
             background: rgba(239, 68, 68, 0.25) !important;
@@ -244,6 +251,7 @@
         <button class="rec-btn rec-btn--start" id="btnStart">&#x25CF; 开始</button>
         <button class="rec-btn rec-btn--pause" id="btnPause" disabled>&#x23F8; 暂停</button>
         <button class="rec-btn rec-btn--stop" id="btnStop" disabled>&#x25A0; 停止</button>
+        <button class="rec-btn rec-btn--save" id="btnSaveHtml">&#x1F4BE; 保存 HTML</button>
     </div>
 
     <!-- === PRESENTATION === -->
@@ -399,6 +407,120 @@
                 };
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
+            }
+        }
+
+        /* ===========================================
+           HTML FILE SAVE
+           - Unsaved browser edits are intentionally volatile
+           - Chrome/Edge can overwrite a user-selected HTML file
+           =========================================== */
+        class DeckPersistence {
+            constructor(stage) {
+                this.stage = stage;
+                this.fileHandle = null;
+                this.assignBlockIds();
+                this.btnSaveHtml = document.getElementById('btnSaveHtml');
+                if (this.btnSaveHtml) this.btnSaveHtml.addEventListener('click', () => this.saveHtml());
+            }
+
+            assignBlockIds() {
+                this.stage.querySelectorAll('.slide').forEach((slide, slideIndex) => {
+                    slide.querySelectorAll('.text-block').forEach((block, blockIndex) => {
+                        if (!block.dataset.blockId) {
+                            block.dataset.blockId = `s${slideIndex + 1}-b${blockIndex + 1}`;
+                        }
+                    });
+                });
+            }
+
+            serializeDocument() {
+                const clone = document.documentElement.cloneNode(true);
+                const body = clone.querySelector('body');
+                if (body) body.classList.remove('is-recording', 'is-paused');
+                const stage = clone.querySelector('#deckStage');
+                if (stage) stage.style.transform = '';
+
+                clone.querySelectorAll('.text-block').forEach(block => {
+                    block.setAttribute('contenteditable', 'false');
+                    block.classList.remove('editing', 'dragging');
+                });
+
+                const recTimer = clone.querySelector('#recTimer');
+                if (recTimer) recTimer.textContent = '00:00';
+                const recDot = clone.querySelector('#recDot');
+                if (recDot) recDot.classList.remove('active', 'paused');
+                const btnStart = clone.querySelector('#btnStart');
+                const btnPause = clone.querySelector('#btnPause');
+                const btnStop = clone.querySelector('#btnStop');
+                if (btnStart) btnStart.removeAttribute('disabled');
+                if (btnPause) btnPause.setAttribute('disabled', '');
+                if (btnStop) btnStop.setAttribute('disabled', '');
+
+                return '<!DOCTYPE html>\n' + clone.outerHTML + '\n';
+            }
+
+            async saveHtml() {
+                const html = this.serializeDocument();
+                const suggestedName = `${this.safeFileName(document.title || 'presentation')}.html`;
+
+                try {
+                    if ('showOpenFilePicker' in window) {
+                        const handle = this.fileHandle || await this.pickHtmlFile();
+                        await this.ensureWritePermission(handle);
+                        const writable = await handle.createWritable();
+                        await writable.write(html);
+                        await writable.close();
+                        this.fileHandle = handle;
+                        this.showToast('已覆盖所选 HTML 文件');
+                    } else {
+                        this.downloadHtml(html, suggestedName);
+                        this.showToast('浏览器不支持覆盖，已下载 HTML 文件');
+                    }
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.error('Unable to save HTML:', err);
+                    this.showToast('HTML 保存失败');
+                }
+            }
+
+            async pickHtmlFile() {
+                this.showToast('请选择要覆盖的 HTML 文件');
+                const [handle] = await window.showOpenFilePicker({
+                    multiple: false,
+                    types: [{ description: 'HTML file', accept: { 'text/html': ['.html', '.htm'] } }]
+                });
+                return handle;
+            }
+
+            async ensureWritePermission(handle) {
+                const options = { mode: 'readwrite' };
+                if ((await handle.queryPermission(options)) === 'granted') return;
+                if ((await handle.requestPermission(options)) === 'granted') return;
+                throw new Error('Write permission denied');
+            }
+
+            downloadHtml(html, filename) {
+                const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            }
+
+            safeFileName(name) {
+                return name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'presentation';
+            }
+
+            showToast(msg) {
+                const t = document.createElement('div');
+                t.textContent = msg;
+                Object.assign(t.style, { position:'fixed', bottom:'60px', left:'50%', transform:'translateX(-50%)', background:'rgba(15,15,19,0.92)', backdropFilter:'blur(8px)', color:'#fff', padding:'10px 20px', borderRadius:'20px', fontSize:'14px', fontFamily:'Inter,system-ui,sans-serif', zIndex:'99999', border:'1px solid rgba(79,195,161,0.35)', transition:'opacity 0.3s' });
+                document.body.appendChild(t);
+                setTimeout(() => { t.style.opacity = '0'; }, 2500);
+                setTimeout(() => { t.remove(); }, 3000);
             }
         }
 
@@ -654,6 +776,7 @@
            INITIALIZE
            =========================================== */
         const presentation = new SlidePresentation();
+        const persistence = new DeckPersistence(document.getElementById('deckStage'));
         const editor = new TextBlockEditor();
         const recorder = new DualRecorder();
 
