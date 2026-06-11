@@ -220,10 +220,75 @@
         body.is-recording .rec-toolbar {
             display: none !important;
         }
+        body.is-recording .camera-preview,
         body.is-recording .slide-counter,
         body.is-recording .nav-hint,
         body.is-recording .progress-bar {
             display: none !important;
+        }
+
+        /* === CAMERA PREVIEW (visible before recording only) === */
+        .camera-preview {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            width: 260px;
+            aspect-ratio: 16 / 9;
+            z-index: 99998;
+            overflow: hidden;
+            border-radius: 18px;
+            background: rgba(15, 15, 19, 0.88);
+            border: 1px solid rgba(99, 102, 241, 0.28);
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.36);
+            backdrop-filter: blur(10px);
+        }
+
+        .camera-preview video {
+            width: 100%;
+            height: 100%;
+            display: none;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        .camera-preview.is-active video {
+            display: block;
+        }
+
+        .camera-preview__placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: rgba(255, 255, 255, 0.78);
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            text-align: center;
+            padding: 16px;
+        }
+
+        .camera-preview.is-active .camera-preview__placeholder {
+            display: none;
+        }
+
+        .camera-preview__btn {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.08);
+            color: #f0f0f2;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 8px 14px;
+            border-radius: 999px;
+            cursor: pointer;
+        }
+
+        .camera-preview__btn:hover {
+            background: rgba(99, 102, 241, 0.28);
+            border-color: rgba(99, 102, 241, 0.45);
         }
 
         /* === SLIDE COUNTER === */
@@ -252,6 +317,15 @@
         <button class="rec-btn rec-btn--pause" id="btnPause" disabled>&#x23F8; 暂停</button>
         <button class="rec-btn rec-btn--stop" id="btnStop" disabled>&#x25A0; 停止</button>
         <button class="rec-btn rec-btn--save" id="btnSaveHtml">&#x1F4BE; 保存 HTML</button>
+    </div>
+
+    <!-- === CAMERA PREVIEW (hidden during recording) === -->
+    <div class="camera-preview" id="cameraPreview">
+        <video id="cameraPreviewVideo" autoplay muted playsinline></video>
+        <div class="camera-preview__placeholder" id="cameraPreviewPlaceholder">
+            <button class="camera-preview__btn" id="btnCameraPreview" type="button">重试摄像头</button>
+            <span>授权后显示预览</span>
+        </div>
     </div>
 
     <!-- === PRESENTATION === -->
@@ -440,6 +514,8 @@
                 if (body) body.classList.remove('is-recording', 'is-paused');
                 const stage = clone.querySelector('#deckStage');
                 if (stage) stage.style.transform = '';
+                const cameraPreview = clone.querySelector('#cameraPreview');
+                if (cameraPreview) cameraPreview.classList.remove('is-active');
 
                 clone.querySelectorAll('.text-block').forEach(block => {
                     block.setAttribute('contenteditable', 'false');
@@ -556,10 +632,58 @@
                 this.btnStop = document.getElementById('btnStop');
                 this.recDot = document.getElementById('recDot');
                 this.recTimer = document.getElementById('recTimer');
+                this.cameraPreview = document.getElementById('cameraPreview');
+                this.cameraPreviewVideo = document.getElementById('cameraPreviewVideo');
+                this.btnCameraPreview = document.getElementById('btnCameraPreview');
+                this.keepCameraPreview = false;
 
                 this.btnStart.addEventListener('click', () => this.start());
                 this.btnPause.addEventListener('click', () => this.togglePause());
                 this.btnStop.addEventListener('click', () => this.stop());
+                if (this.btnCameraPreview) this.btnCameraPreview.addEventListener('click', () => this.startCameraPreview());
+                setTimeout(() => this.startCameraPreview({ silent: true }), 0);
+            }
+
+            async startCameraPreview(options = {}) {
+                this.keepCameraPreview = true;
+                const stream = await this.ensureCameraStream();
+                if (stream && !options.silent) this.showToast('\u2705 摄像头预览已开启');
+            }
+
+            async ensureCameraStream() {
+                const liveTrack = this.cameraStream && this.cameraStream.getVideoTracks().find(t => t.readyState === 'live');
+                if (liveTrack) {
+                    this.attachCameraPreview();
+                    return this.cameraStream;
+                }
+
+                try {
+                    this.cameraStream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                        audio: false
+                    });
+                    this.attachCameraPreview();
+                    const track = this.cameraStream.getVideoTracks()[0];
+                    if (track) track.addEventListener('ended', () => this.clearCameraPreview());
+                    return this.cameraStream;
+                } catch (err) {
+                    this.cameraStream = null;
+                    this.clearCameraPreview();
+                    this.showToast('\u274C 无法开启摄像头');
+                    return null;
+                }
+            }
+
+            attachCameraPreview() {
+                if (!this.cameraPreview || !this.cameraPreviewVideo || !this.cameraStream) return;
+                this.cameraPreviewVideo.srcObject = this.cameraStream;
+                this.cameraPreview.classList.add('is-active');
+            }
+
+            clearCameraPreview() {
+                if (this.cameraPreviewVideo) this.cameraPreviewVideo.srcObject = null;
+                if (this.cameraPreview) this.cameraPreview.classList.remove('is-active');
+                this.cameraStream = null;
             }
 
             async start() {
@@ -595,15 +719,8 @@
                     return;
                 }
 
-                // 3. Capture camera (no preview)
-                try {
-                    this.cameraStream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                        audio: false
-                    });
-                } catch (err) {
-                    this.cameraStream = null;
-                }
+                // 3. Capture camera, reusing preview stream when available
+                await this.ensureCameraStream();
 
                 // 4. Build streams
                 const slidesStream = new MediaStream();
@@ -639,6 +756,7 @@
                 }
 
                 // 7. Start
+                document.body.classList.add('is-recording');
                 this.tabRecorder.start(1000);
                 if (this.cameraRecorder) this.cameraRecorder.start(1000);
 
@@ -704,7 +822,12 @@
 
                 // Cleanup
                 if (this.tabStream) { this.tabStream.getTracks().forEach(t => t.stop()); this.tabStream = null; }
-                if (this.cameraStream) { this.cameraStream.getTracks().forEach(t => t.stop()); this.cameraStream = null; }
+                if (this.cameraStream && !this.keepCameraPreview) {
+                    this.cameraStream.getTracks().forEach(t => t.stop());
+                    this.clearCameraPreview();
+                } else {
+                    this.attachCameraPreview();
+                }
                 if (this.micStream) { this.micStream.getTracks().forEach(t => t.stop()); this.micStream = null; }
 
                 // Save to folder
